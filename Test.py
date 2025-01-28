@@ -78,3 +78,37 @@ with open('tokenizer.pkl', 'wb') as f:
     pickle.dump(tokenizer, f)
 
 model.save('flavor_lstm_model.h5')
+
+def make_lstm_model():
+    return keras.Sequential(
+        [
+            layers.Embedding(
+                input_dim=vocabulary_size + 1,  # +1 for padding token
+                output_dim=128,  # Embedding size
+                mask_zero=True,
+            ),
+            layers.Bidirectional(layers.LSTM(64, return_sequences=True)),
+            layers.GlobalMaxPooling1D(),
+            layers.Dense(128, activation="relu"),
+            layers.Dropout(0.5),
+            layers.Dense(lookup.vocabulary_size(), activation="sigmoid"),
+        ]
+    )
+
+# Replace shallow MLP with LSTM-based model
+lstm_model = make_lstm_model()
+lstm_model.compile(
+    loss="binary_crossentropy", optimizer="adam", metrics=["binary_accuracy"]
+)
+
+# Train the LSTM-based model
+history = lstm_model.fit(
+    train_dataset, validation_data=validation_dataset, epochs=epochs
+)
+
+# Plot the training results
+plot_result("loss")
+plot_result("binary_accuracy")
+
+
+
