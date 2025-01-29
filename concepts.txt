@@ -1,0 +1,179 @@
+
+
+1. Deep Neural Networks Fundamentals:
+
+a) Neural Network Basics:
+- Neurons: Basic computational units that:
+  * Receive inputs
+  * Apply weights and biases
+  * Pass through an activation function
+  * Produce output
+- Layers: Groups of neurons
+  * Input Layer: Receives raw data
+  * Hidden Layers: Process information
+  * Output Layer: Produces final predictions
+
+b) Activation Functions:
+- ReLU (Rectified Linear Unit): 
+  * Most commonly used
+  * f(x) = max(0, x)
+  * Helps with vanishing gradient problem
+- Sigmoid: 
+  * Used in output layer for multi-label classification
+  * Maps outputs to [0,1] range
+  * f(x) = 1/(1 + e^-x)
+
+2. Text Processing Deep Dive:
+
+a) Tokenization:
+```python
+# Example text
+text = "The quick brown fox"
+
+# After tokenization
+tokens = ["The", "quick", "brown", "fox"]
+
+# After integer encoding
+encoded = [45, 182, 94, 267]  # Example indices
+```
+
+b) Word Embeddings:
+- Dense vector representation of words
+- Similar words have similar vectors
+```
+"king"  -> [0.2, -0.5, 0.1, 0.8]
+"queen" -> [0.2, -0.4, 0.1, 0.7]
+"dog"   -> [-0.4, 0.2, -0.3, 0.1]
+```
+
+3. LSTM Architecture in Detail:
+
+a) LSTM Cell Structure:
+```
+Input Gate (i):
+- Controls what new information to store
+σ(Wi[ht-1, xt] + bi)
+
+Forget Gate (f):
+- Controls what information to throw away
+σ(Wf[ht-1, xt] + bf)
+
+Cell State (C):
+- Long-term memory
+Ct = ft * Ct-1 + it * tanh(Wc[ht-1, xt] + bc)
+
+Output Gate (o):
+- Controls what parts of cell state to output
+ht = ot * tanh(Ct)
+```
+
+b) Bidirectional LSTM:
+- Processes sequence in both directions
+- Forward LSTM: [1, 2, 3, 4, 5] →
+- Backward LSTM: [1, 2, 3, 4, 5] ←
+- Combines both for richer representation
+
+4. Transformer Architecture Detailed:
+
+a) Multi-Head Attention:
+```
+Q (Query), K (Key), V (Value) matrices
+Attention(Q, K, V) = softmax(QK^T/√dk)V
+
+Multiple heads allow attending to different parts:
+head_i = Attention(QWi_q, KWi_k, VWi_v)
+MultiHead = Concat(head_1, ..., head_h)W_o
+```
+
+b) Position-wise Feed-Forward:
+```python
+FFN(x) = max(0, xW1 + b1)W2 + b2
+```
+
+5. Training Process Detailed:
+
+a) Forward Pass:
+```python
+# Example with single sample
+description_input = "Fix system error"
+resolution_input = "Restart service"
+
+# Vectorization
+desc_vec = vectorizer(description_input)  # [45, 82, 123]
+res_vec = vectorizer(resolution_input)    # [67, 91]
+
+# Embedding
+desc_emb = embedding_layer(desc_vec)  # Shape: [seq_len, emb_dim]
+res_emb = embedding_layer(res_vec)    # Shape: [seq_len, emb_dim]
+
+# LSTM Processing
+desc_features = lstm_layer(desc_emb)  # Shape: [hidden_size]
+res_features = lstm_layer(res_emb)    # Shape: [hidden_size]
+
+# Final Prediction
+prediction = dense_layer(combined_features)  # Shape: [num_labels]
+```
+
+b) Backpropagation:
+- Calculates gradients of loss with respect to weights
+- Uses chain rule to propagate error backwards
+```python
+# Simplified example
+loss = binary_crossentropy(true_labels, predictions)
+gradients = tape.gradient(loss, model.trainable_variables)
+optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+```
+
+6. Your Model's Architecture:
+
+a) Training Phase Architecture:
+```
+Description Input → TextVectorization → Embedding
+                                          ↓
+                                    LSTM/Transformer
+                                          ↓
+                                    Dense Features
+                                          ↓
+Resolution Input → TextVectorization → Embedding    
+                                          ↓          
+                                    LSTM/Transformer
+                                          ↓
+                                    Dense Features
+                                          ↓
+                                Attention Mechanism
+                                          ↓
+                                 Classification Layer
+```
+
+b) Loss Function (Binary Crossentropy):
+```python
+BCE = -Σ(y_true * log(y_pred) + (1 - y_true) * log(1 - y_pred))
+```
+
+7. Key Hyperparameters Impact:
+
+a) Embedding Dimension (128):
+- Too small: Can't capture word relationships
+- Too large: Overfitting, slower training
+- 128 is good balance for medium vocabulary
+
+b) LSTM Units (64):
+- Controls model's memory capacity
+- More units = more complex patterns
+- But also more parameters to train
+
+c) Batch Size (32):
+- Smaller: More frequent updates, more noise
+- Larger: Stable updates, more memory needed
+- 32 is common sweet spot
+
+d) Learning Rate:
+- Too high: Unstable training
+- Too low: Slow convergence
+- Adam optimizer helps adapt automatically
+
+Would you like me to:
+1. Provide more detailed examples for any section?
+2. Explain the mathematics behind any component?
+3. Show how specific hyperparameters affect your specific case?
+4. Dive deeper into the attention mechanism?
