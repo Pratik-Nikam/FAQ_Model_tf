@@ -1,0 +1,125 @@
+import tensorflow as tf
+from tensorflow import keras
+import numpy as np
+import pandas as pd
+import os
+
+# 1. First, save the complete model properly
+def save_complete_model(model_for_inference, text_vectorizer, lookup_layer, save_dir='saved_model'):
+    """Save the model and all necessary components"""
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        
+    # Save the complete model (which includes text_vectorizer)
+    model_for_inference.save(save_dir)
+    
+    # Save the lookup layer vocabulary
+    vocab = lookup_layer.get_vocabulary()
+    np.save(f"{save_dir}/label_vocab.npy", vocab)
+    
+    print(f"Model and vocabularies saved to {save_dir}")
+
+# 2. Function to load model and make predictions
+def load_model_and_predict(text, model_dir='saved_model', top_k=3):
+    """
+    Load model and make predictions
+    
+    Args:
+        text: String containing the text to classify
+        model_dir: Directory where model is saved
+        top_k: Number of top predictions to return
+    """
+    # Load the model (which includes text_vectorizer)
+    model = tf.keras.models.load_model(model_dir)
+    
+    # Load label vocabulary
+    label_vocab = np.load(f"{model_dir}/label_vocab.npy")
+    
+    # Prepare the input text
+    # If single string, convert to list
+    if isinstance(text, str):
+        text = [text]
+        
+    # Make prediction
+    predictions = model.predict(text)
+    
+    # Get top k predictions for each input text
+    results = []
+    for pred in predictions:
+        # Get indices of top k predictions
+        top_indices = pred.argsort()[-top_k:][::-1]
+        
+        # Get corresponding labels and probabilities
+        result = [(label_vocab[idx], float(pred[idx])) for idx in top_indices]
+        results.append(result)
+    
+    # If input was single string, return single result
+    return results[0] if len(text) == 1 else results
+
+# Example usage:
+
+# 1. After training, save the model
+# Note: Run this after training is complete
+"""
+save_complete_model(
+    model_for_inference=model_for_inference,
+    text_vectorizer=text_vectorizer,
+    lookup_layer=lookup,
+    save_dir='arxiv_classifier'
+)
+"""
+
+# 2. Later, use the model for predictions
+# Note: This is how you would use the saved model
+
+def test_model(model_dir='arxiv_classifier'):
+    """Test the saved model with some example texts"""
+    
+    # Test with single abstract
+    test_abstract = """This paper presents a novel approach to deep learning 
+                      architectures for image classification tasks."""
+    
+    try:
+        print("\nTesting single prediction...")
+        predictions = load_model_and_predict(test_abstract, model_dir)
+        print("\nPredictions for test abstract:")
+        for label, prob in predictions:
+            print(f"{label}: {prob:.4f}")
+            
+        # Test with multiple abstracts
+        test_abstracts = [
+            "A new algorithm for quantum computing applications.",
+            "Statistical analysis of climate change data."
+        ]
+        
+        print("\nTesting batch prediction...")
+        batch_predictions = load_model_and_predict(test_abstracts, model_dir)
+        
+        print("\nPredictions for multiple abstracts:")
+        for i, preds in enumerate(batch_predictions):
+            print(f"\nAbstract {i+1}:")
+            for label, prob in preds:
+                print(f"{label}: {prob:.4f}")
+                
+    except Exception as e:
+        print(f"Error during prediction: {e}")
+        print("\nDebug information:")
+        print(f"Model directory exists: {os.path.exists(model_dir)}")
+        print(f"Label vocabulary exists: {os.path.exists(f'{model_dir}/label_vocab.npy')}")
+        
+# Example of how to use the model:
+"""
+# First, after training, save the model:
+save_complete_model(
+    model_for_inference=model_for_inference,
+    text_vectorizer=text_vectorizer,
+    lookup_layer=lookup,
+    save_dir='arxiv_classifier'
+)
+
+# Later, to make predictions:
+abstract = "Your abstract text here"
+predictions = load_model_and_predict(abstract, model_dir='arxiv_classifier')
+for label, probability in predictions:
+    print(f"{label}: {probability:.4f}")
+"""
