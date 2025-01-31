@@ -1,118 +1,124 @@
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
-from typing import List, Dict
+import json
+import os
 
-class TextClassifierModel(tf.keras.Model):
-    def __init__(self, vectorizer, classifier, label_lookup):
-        super().__init__()
-        self.vectorizer = vectorizer
-        self.classifier = classifier
-        self.label_lookup = label_lookup
+def save_model_components(model, text_vectorizer, lookup_layer, save_dir='saved_model'):
+    """Save model components separately"""
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
+    # 1. Save the base model (without text vectorization)
+    model.save(f"{save_dir}/base_model")
+    
+    # 2. Save text vectorizer configuration and vocabulary
+    text_vectorizer_config = text_vectorizer.get_config()
+    vocab = text_vectorizer.get_vocabulary()
+    
+    config_data = {
+        'config': text_vectorizer_config,
+        'vocabulary': vocab
+    }
+    
+    with open(f"{save_dir}/text_vectorizer_config.json", 'w') as f:
+        json.dump(config_data, f)
+    
+    # 3. Save lookup layer vocabulary
+    lookup_vocab = lookup_layer.get_vocabulary()
+    np.save(f"{save_dir}/lookup_vocab.npy", lookup_vocab)
+    
+    print(f"Model components saved to {save_dir}")
 
-    def call(self, inputs):
-        # Handle both single strings and batches
-        if isinstance(inputs, str):
-            inputs = [inputs]
+def load_model_components(save_dir='saved_model'):
+    """Load all model components"""
+    # 1. Load base model
+    model = tf.keras.models.load_model(f"{save_dir}/base_model")
+    
+    # 2. Load and recreate text vectorizer
+    with open(f"{save_dir}/text_vectorizer_config.json", 'r') as f:
+        config_data = json.load(f)
+    
+    text_vectorizer = tf.keras.layers.TextVectorization.from_config(config_data['config'])
+    # Adapt vocabulary
+    text_vectorizer.set_vocabulary(config_data['vocabulary'])
+    
+    # 3. Load lookup vocabulary
+    lookup_vocab = np.load(f"{save_dir}/lookup_vocab.npy")
+    
+    return model, text_vectorizer, lookup_vocab
+
+def predict_text(text, save_dir='saved_model', top_k=3):
+    """Make predictions using loaded model components"""
+    # Load components
+    model, text_vectorizer, lookup_vocab = load_model_components(save_dir)
+    
+    # Prepare input
+    if isinstance(text, str):
+        text = [text]
+    
+    # Process text through vectorizer
+    vectorized_text = text_vectorizer(text)
+    
+    # Get predictions
+    predictions = model.predict(vectorized_text)
+    
+    # Process results
+    results = []
+    for pred in predictions:
+        # Get top k predictions
+        top_indices = pred.argsort()[-top_k:][::-1]
         
-        # Vectorize the text
-        x = self.vectorizer(inputs)
-        
-        # Get predictions
-        predictions = self.classifier(x)
-        
-        return predictions
+        # Get labels and probabilities
+        result = [(lookup_vocab[idx], float(pred[idx])) for idx in top_indices]
+        results.append(result)
     
-    def predict_with_labels(self, text: str, threshold: float = 0.5) -> Dict[str, float]:
-        """
-        Predict with human-readable labels and probabilities
-        """
-        predictions = self(text)
-        
-        # Get vocabulary for labels
-        vocab = self.label_lookup.get_vocabulary()
-        
-        # Convert predictions to dictionary of label: probability
-        results = {
-            vocab[i]: float(prob)
-            for i, prob in enumerate(predictions[0])
-            if prob >= threshold
-        }
-        
-        # Sort by probability
-        return dict(sorted(results.items(), key=lambda x: x[1], reverse=True))
+    return results[0] if len(text) == 1 else results
 
-def create_combined_model(text_vectorizer, classifier_model, label_lookup):
-    """
-    Create a combined model that includes preprocessing and prediction
-    """
-    return TextClassifierModel(text_vectorizer, classifier_model, label_lookup)
+# Example usage:
 
-def save_combined_model(model: TextClassifierModel, path: str = "./saved_model"):
-    """
-    Save the combined model using TensorFlow's SavedModel format
-    """
-    # Save the model with its custom object
-    tf.saved_model.save(model, path)
-    print(f"Model saved to {path}")
-
-def load_combined_model(path: str = "./saved_model") -> TextClassifierModel:
-    """
-    Load the combined model
-    """
-    model = tf.saved_model.load(path)
-    print(f"Model loaded from {path}")
-    return model
-
-# Example usage with FastAPI
-from fastapi import FastAPI
-from pydantic import BaseModel
-
-app = FastAPI()
-
-class TextRequest(BaseModel):
-    text: str
-    threshold: float = 0.5
-
-@app.post("/predict")
-async def predict(request: TextRequest):
-    predictions = model.predict_with_labels(request.text, request.threshold)
-    return {"predictions": predictions}
-
-if __name__ == "__main__":
-    # Step 1: After training, create and save the combined model
-    combined_model = create_combined_model(text_vectorizer, shallow_mlp_model, lookup)
-    
-    # Example text for testing
-    test_text = "This paper introduces a new approach to deep learning..."
-    
-    # Test prediction before saving
-    print("Predictions before saving:")
-    print(combined_model.predict_with_labels(test_text))
-    
-    # Save the model
-    save_combined_model(combined_model)
-    
-    # Load the model
-    model = load_combined_model()
-    
-    # Test prediction after loading
-    print("\nPredictions after loading:")
-    print(model.predict_with_labels(test_text))
-    
-    # Start the API server
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# Example of using the model directly in a script
+# 1. After training, save the model components:
 """
-# Load and use the model
-model = load_combined_model("./saved_model")
-
-# Single prediction
-text = "This paper presents a novel approach to machine learning..."
-predictions = model.predict_with_labels(text, threshold=0.3)
-print("\nPredictions for:", text)
-for label, prob in predictions.items():
-    print(f"{label}: {prob:.4f}")
+save_model_components(
+    model=shallow_mlp_model,  # Your trained model
+    text_vectorizer=text_vectorizer,
+    lookup_layer=lookup,
+    save_dir='arxiv_model'
+)
 """
+
+# 2. Function to test the saved model
+def test_saved_model(save_dir='arxiv_model'):
+    """Test the saved model with example texts"""
+    try:
+        # Test single prediction
+        test_text = """This paper presents a novel approach to deep learning 
+                      architectures for image classification tasks."""
+        
+        print("\nTesting single prediction...")
+        predictions = predict_text(test_text, save_dir)
+        print("\nPredictions for test text:")
+        for label, prob in predictions:
+            print(f"{label}: {prob:.4f}")
+        
+        # Test batch prediction
+        test_texts = [
+            "A new quantum computing algorithm for optimization problems.",
+            "Statistical methods for analyzing genomic data."
+        ]
+        
+        print("\nTesting batch prediction...")
+        batch_predictions = predict_text(test_texts, save_dir)
+        
+        print("\nPredictions for multiple texts:")
+        for i, preds in enumerate(batch_predictions):
+            print(f"\nText {i+1}:")
+            for label, prob in preds:
+                print(f"{label}: {prob:.4f}")
+                
+    except Exception as e:
+        print(f"Error during prediction: {e}")
+        print("\nDebug information:")
+        print(f"Model directory exists: {os.path.exists(save_dir)}")
+        print(f"Text vectorizer config exists: {os.path.exists(f'{save_dir}/text_vectorizer_config.json')}")
+        print(f"Lookup vocabulary exists: {os.path.exists(f'{save_dir}/lookup_vocab.npy')}")
