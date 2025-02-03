@@ -158,3 +158,7 @@ top_k = 3
 top_k_indices = tf.math.top_k(predictions, k=top_k).indices.numpy()
 
 actual_labels = [mlb.classes_[i] for i in top_k_indices]
+
+
+
+https://github.com/kmkarakaya/Deep-Learning-Tutorials/blob/master/Text_Vectorization_Use_Save_Upload.ipynb
