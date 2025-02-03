@@ -75,3 +75,45 @@ with open("model_config.pkl", "wb") as f:
 # Save vocabulary
 with open("label_vocab.pkl", "wb") as f:
     pickle.dump(label_vocab, f)
+
+
+# Load components
+with open("model_config.pkl", "rb") as f:
+    config = pickle.load(f)
+
+loaded_model = models.Model.from_config(
+    model.get_config(),
+    custom_objects={
+        "TextVectorization": layers.TextVectorization,
+        "StringLookup": layers.StringLookup
+    }
+)
+loaded_model.load_weights("model_weights.weights.h5")
+
+# Restore layer states
+loaded_model.get_layer("text_vectorizer").adapt(text_ds)
+loaded_model.get_layer("string_lookup").adapt(label_terms)
+
+# Load vocabulary
+with open("label_vocab.pkl", "rb") as f:
+    label_vocab = pickle.load(f)
+
+
+def predict(texts, threshold=0.5):
+    # Convert to tensor with shape (batch_size, 1)
+    input_tensor = tf.constant(texts, dtype=tf.string)[:, tf.newaxis]
+    
+    # Predict
+    preds = loaded_model.predict(input_tensor)
+    
+    # Get labels
+    return [
+        [label_vocab[i] for i in np.where(pred > threshold)[0]]
+        for pred in preds
+    ]
+
+# Usage
+new_texts = ["Your research abstract here..."]
+print(predict(new_texts))
+
+
