@@ -57,3 +57,21 @@ for i, text in enumerate(new_texts):
     print(f"Text: {text}")
     print(f"Predicted Labels: {', '.join(top_k_predictions[i])}")
     print(" ")
+
+
+# Calculate class weights
+class_weights = compute_class_weight('balanced', classes=np.unique(train_labels), y=train_labels)
+class_weights = dict(enumerate(class_weights))
+
+# Add to model.fit()
+history = shallow_mlp_model.fit(
+    train_dataset,
+    validation_data=validation_dataset,
+    epochs=epochs,
+    class_weight=class_weights
+    
+    from tensorflow.keras.models import load_model, Sequential
+ model_for_inference.save('/tmp/keras-model.h5')
+ load_ = load_model('/tmp/keras-model.h5')
+load_.compile(
+    loss="binary_crossentropy", optimizer="adam", metrics=["binary_accuracy"]
