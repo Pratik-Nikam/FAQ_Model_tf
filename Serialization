@@ -1,0 +1,116 @@
+import tensorflow as tf
+from tensorflow.keras import layers, models
+import numpy as np
+
+# 1. Define preprocessing layers with explicit serialization
+# ----------------------------------------------------------
+class TextPreprocessor(tf.keras.layers.Layer):
+    """Custom layer wrapping TextVectorization for proper serialization"""
+    def __init__(self, max_tokens=10000, output_mode="multi_hot", name="text_preprocessor"):
+        super().__init__(name=name)
+        self.vectorizer = layers.TextVectorization(
+            max_tokens=max_tokens,
+            output_mode=output_mode,
+            standardize="lower_and_strip_punctuation",
+            name="text_vectorizer"
+        )
+        
+    def adapt(self, data):
+        self.vectorizer.adapt(data)
+        
+    def call(self, inputs):
+        return self.vectorizer(inputs)
+    
+    def get_config(self):
+        return {
+            "max_tokens": self.vectorizer.max_tokens,
+            "output_mode": self.vectorizer.output_mode,
+            "name": self.name
+        }
+
+# 2. Create and adapt preprocessing layers
+# ----------------------------------------------------------
+# Sample data
+train_texts = [
+    "Machine learning research papers",
+    "Deep neural network architectures",
+    "Computer vision applications",
+    "Natural language processing models",
+    "AI in healthcare diagnostics"
+]
+train_labels = [
+    "cs.LG",  # Replace with your actual labels
+    "cs.CV",
+    "cs.CL",
+    "cs.AI",
+    "cs.LG"
+]
+
+# Create and adapt text preprocessor
+text_preprocessor = TextPreprocessor(max_tokens=5000)
+text_preprocessor.adapt(tf.data.Dataset.from_tensor_slices(train_texts).batch(32))
+
+# Create label lookup layer
+label_lookup = layers.StringLookup(num_oov_indices=1)
+label_lookup.adapt(tf.data.Dataset.from_tensor_slices(train_labels).batch(32))
+
+# 3. Build model with explicit serialization
+# ----------------------------------------------------------
+def build_model():
+    # Text input pipeline
+    text_input = layers.Input(shape=(1,), dtype=tf.string, name="text_input")
+    x = text_preprocessor(text_input)
+    
+    # Classification head
+    x = layers.Dense(256, activation="relu")(x)
+    x = layers.Dropout(0.4)(x)
+    x = layers.Dense(128, activation="relu")(x)
+    
+    # Label prediction (using StringLookup)
+    outputs = layers.Dense(label_lookup.vocabulary_size(), activation="softmax", name="predictions")(x)
+    
+    return models.Model(text_input, outputs)
+
+model = build_model()
+
+# 4. Compile and train
+# ----------------------------------------------------------
+model.compile(
+    optimizer="adam",
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"]
+)
+
+# Convert labels to encoded indices
+encoded_labels = label_lookup(tf.convert_to_tensor(train_labels))
+
+# Create dataset
+train_dataset = tf.data.Dataset.from_tensor_slices((train_texts, encoded_labels))
+train_dataset = train_dataset.batch(2).prefetch(tf.data.AUTOTUNE)
+
+# Train
+model.fit(train_dataset, epochs=5)
+
+# 5. Verify model saving/loading
+# ----------------------------------------------------------
+# Save model
+model.save("full_model.keras", save_format="keras")
+
+# Load model with custom objects
+loaded_model = models.load_model(
+    "full_model.keras",
+    custom_objects={
+        "TextPreprocessor": TextPreprocessor,
+        "TextVectorization": layers.TextVectorization,
+        "StringLookup": layers.StringLookup
+    }
+)
+
+# Test prediction
+test_sample = ["New machine learning techniques"]
+original_pred = model.predict(test_sample)
+loaded_pred = loaded_model.predict(test_sample)
+
+print("Original model prediction:", original_pred)
+print("Loaded model prediction:", loaded_pred)
+print("Predictions match:", np.allclose(original_pred, loaded_pred, atol=1e-6))
