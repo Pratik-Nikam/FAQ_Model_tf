@@ -1,0 +1,64 @@
+To apply SMOTE when you have categorical data like "Description" (text) and "Flavor" (labels), we need to:
+
+1. Convert text descriptions into numerical features (e.g., using TF-IDF or CountVectorizer).
+
+
+2. Apply SMOTE to balance the flavors.
+
+
+3. Convert the oversampled data back into a usable format.
+
+
+
+Here's how you can do it:
+
+Applying SMOTE for Text Data
+
+import pandas as pd
+from collections import Counter
+from imblearn.over_sampling import SMOTE
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Sample DataFrame (replace with your actual dataset)
+df = pd.DataFrame({
+    'Description': ["Sweet and tangy", "Rich and creamy", "Bitter with a hint of citrus", 
+                    "Mild and smooth", "Strong and spicy", "Sweet and fruity"],  
+    'Flavor': ["Citrus", "Vanilla", "Bitter", "Mild", "Spicy", "Fruity"]
+})
+
+# Assuming you have a large dataset, replace df with your actual data
+X_text = df["Description"]  # Text data
+y = df["Flavor"]  # Target labels (flavors)
+
+# Convert text descriptions into numerical features using TF-IDF
+vectorizer = TfidfVectorizer()
+X_vectorized = vectorizer.fit_transform(X_text)
+
+# Check class distribution before SMOTE
+print("Class distribution before SMOTE:", Counter(y))
+
+# Apply SMOTE
+smote = SMOTE(sampling_strategy='auto', random_state=42)
+X_resampled, y_resampled = smote.fit_resample(X_vectorized, y)
+
+# Convert back to DataFrame
+df_resampled = pd.DataFrame(X_resampled.toarray(), columns=vectorizer.get_feature_names_out())
+df_resampled["Flavor"] = y_resampled
+
+# Check class distribution after SMOTE
+print("Class distribution after SMOTE:", Counter(y_resampled))
+
+Key Steps
+
+1. TF-IDF Vectorization: Converts text descriptions into numerical features.
+
+
+2. SMOTE Balancing: Ensures each flavor has an equal number of descriptions.
+
+
+3. Conversion Back to DataFrame: Keeps flavors with their newly generated data points.
+
+
+
+Would you like help visualizing the class distribution before and after SMOTE?
+
