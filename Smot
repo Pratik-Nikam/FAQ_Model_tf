@@ -147,3 +147,120 @@ Key Fixes
 
 This should resolve the issue. Let me know if you need further tweaks!
 
+
+If you want to build a Retrieval-Augmented Generation (RAG) system without using an LLM, you can use TF-IDF, BM25, or dense embeddings for retrieval and generate responses using simple template-based or rule-based methods. Here’s how you can do it:
+
+
+---
+
+1. Data Preparation
+
+Ensure your FAQ dataset is structured in a format like CSV or JSON:
+
+
+---
+
+2. Retrieval Mechanisms
+
+A. TF-IDF + Cosine Similarity
+
+This method converts questions into vectors and retrieves the most similar one.
+
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load FAQ data
+faq_data = pd.read_csv("faq.csv")
+
+# Vectorize questions
+vectorizer = TfidfVectorizer()
+question_vectors = vectorizer.fit_transform(faq_data["Question"])
+
+def retrieve_answer(user_query):
+    query_vector = vectorizer.transform([user_query])
+    similarities = cosine_similarity(query_vector, question_vectors)
+    best_match_idx = similarities.argmax()
+    return faq_data["Answer"][best_match_idx]
+
+# Example usage
+print(retrieve_answer("How do I change my password?"))
+
+
+---
+
+B. BM25 (Better for Text Retrieval)
+
+BM25 (from Elasticsearch or rank_bm25) retrieves FAQs based on relevance.
+
+from rank_bm25 import BM25Okapi
+from nltk.tokenize import word_tokenize
+
+# Preprocess data
+faq_questions = faq_data["Question"].tolist()
+tokenized_corpus = [word_tokenize(q.lower()) for q in faq_questions]
+
+# Initialize BM25 model
+bm25 = BM25Okapi(tokenized_corpus)
+
+def retrieve_answer_bm25(user_query):
+    query_tokens = word_tokenize(user_query.lower())
+    scores = bm25.get_scores(query_tokens)
+    best_match_idx = scores.argmax()
+    return faq_data["Answer"][best_match_idx]
+
+print(retrieve_answer_bm25("Can I get a refund?"))
+
+
+---
+
+C. Dense Embeddings (More Accurate)
+
+Use Sentence-BERT (SBERT) for retrieval.
+
+from sentence_transformers import SentenceTransformer, util
+
+# Load SBERT model
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Encode FAQ questions
+faq_embeddings = model.encode(faq_data["Question"].tolist(), convert_to_tensor=True)
+
+def retrieve_answer_sbert(user_query):
+    query_embedding = model.encode(user_query, convert_to_tensor=True)
+    scores = util.pytorch_cos_sim(query_embedding, faq_embeddings)[0]
+    best_match_idx = scores.argmax().item()
+    return faq_data["Answer"][best_match_idx]
+
+print(retrieve_answer_sbert("I forgot my password, what should I do?"))
+
+
+---
+
+3. Generation without LLM
+
+Since you're not using an LLM, you can:
+
+Return the exact answer from the FAQ.
+
+Use templates for dynamic responses:
+
+
+def generate_response(answer):
+    return f"Sure! Here’s what I found: {answer}"
+
+
+---
+
+4. Deployment
+
+Use Flask or FastAPI to create an API.
+
+Store embeddings in FAISS or Weaviate for fast retrieval.
+
+Deploy on AWS/GCP/Azure.
+
+
+Would you like a Flask API example or guidance on deployment?
+
+
