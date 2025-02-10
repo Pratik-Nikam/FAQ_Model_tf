@@ -62,3 +62,88 @@ Key Steps
 
 Would you like help visualizing the class distribution before and after SMOTE?
 
+The error occurs because SMOTE requires at least n_neighbors + 1 samples in each class, but some flavors in your dataset have only one description. By default, SMOTE tries to generate new samples using the k=5 nearest neighbors, but if a class has only 1 sample, there aren't enough neighbors to generate synthetic data.
+
+Fix
+
+To resolve this, we can:
+
+1. Use SMOTE(sampling_strategy="not majority"): Ensures only underrepresented classes are oversampled.
+
+
+2. Set k_neighbors dynamically: If some classes have fewer than n_neighbors, adjust k_neighbors.
+
+
+3. Use SMOTETomek or SMOTEENN: Hybrid methods handle edge cases better.
+
+
+4. Use RandomOverSampler for extremely rare classes: If a class has only one sample, SMOTE cannot work, so RandomOverSampler can be an alternative.
+
+
+
+
+---
+
+Modified Code: Handling Rare Classes
+
+import pandas as pd
+from collections import Counter
+from imblearn.over_sampling import SMOTE
+from imblearn.over_sampling import RandomOverSampler
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Sample DataFrame (replace with your actual dataset)
+df = pd.DataFrame({
+    'Description': ["Sweet and tangy", "Rich and creamy", "Bitter with a hint of citrus", 
+                    "Mild and smooth", "Strong and spicy", "Sweet and fruity"],  
+    'Flavor': ["Citrus", "Vanilla", "Bitter", "Mild", "Spicy", "Fruity"]
+})
+
+# Assuming you have a large dataset, replace df with your actual data
+X_text = df["Description"]  # Text data
+y = df["Flavor"]  # Target labels (flavors)
+
+# Convert text descriptions into numerical features using TF-IDF
+vectorizer = TfidfVectorizer()
+X_vectorized = vectorizer.fit_transform(X_text)
+
+# Check class distribution before SMOTE
+print("Class distribution before SMOTE:", Counter(y))
+
+# Get the minimum class count (excluding the majority class)
+min_class_count = min(Counter(y).values())
+
+# If any class has only 1 sample, use RandomOverSampler first
+if min_class_count < 2:
+    print("Using RandomOverSampler for rare classes...")
+    ros = RandomOverSampler(sampling_strategy="not majority", random_state=42)
+    X_vectorized, y = ros.fit_resample(X_vectorized, y)
+
+# Apply SMOTE with adjusted k_neighbors
+smote = SMOTE(sampling_strategy="not majority", k_neighbors=min(5, min_class_count - 1), random_state=42)
+X_resampled, y_resampled = smote.fit_resample(X_vectorized, y)
+
+# Convert back to DataFrame
+df_resampled = pd.DataFrame(X_resampled.toarray(), columns=vectorizer.get_feature_names_out())
+df_resampled["Flavor"] = y_resampled
+
+# Check class distribution after SMOTE
+print("Class distribution after SMOTE:", Counter(y_resampled))
+
+
+---
+
+Key Fixes
+
+1. RandomOverSampler for classes with 1 sample: Ensures rare classes have enough samples before SMOTE.
+
+
+2. k_neighbors dynamically set: Prevents SMOTE from failing due to a lack of neighbors.
+
+
+3. sampling_strategy="not majority": Only balances the minority classes without oversampling the majority class.
+
+
+
+This should resolve the issue. Let me know if you need further tweaks!
+
