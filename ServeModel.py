@@ -40,20 +40,110 @@ if __name__ == '__main__':
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flask Chat</title>
+    <title>Aware Testing Bot</title>
     <style>
-        body { font-family: Arial, sans-serif; }
-        .chat-box { width: 300px; margin: 20px auto; border: 1px solid #ccc; padding: 10px; }
-        .messages { height: 200px; overflow-y: auto; border-bottom: 1px solid #ccc; margin-bottom: 10px; padding: 5px; }
-        .input-area { display: flex; }
-        .input-area input { flex: 1; padding: 5px; }
-        .input-area button { padding: 5px; }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .chat-container {
+            width: 400px;
+            background: white;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: #007bff;
+            color: white;
+            text-align: center;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .chat-note {
+            background: #e9f5ff;
+            padding: 10px;
+            font-size: 14px;
+            color: #333;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .chat-box {
+            height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 75%;
+        }
+
+        .user-message {
+            background: #007bff;
+            color: white;
+            text-align: right;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .bot-message {
+            background: #f1f1f1;
+            color: black;
+            text-align: left;
+            align-self: flex-start;
+        }
+
+        .input-area {
+            display: flex;
+            padding: 10px;
+            background: #fff;
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .input-area button {
+            padding: 10px 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            margin-left: 10px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .input-area button:hover {
+            background: #0056b3;
+        }
+
     </style>
 </head>
 <body>
 
-    <div class="chat-box">
-        <div class="messages" id="chatMessages"></div>
+    <div class="chat-container">
+        <div class="chat-header">Aware Testing Bot</div>
+        <div class="chat-note">Provide the bot with just description.</div>
+        <div class="chat-box" id="chatMessages"></div>
         <div class="input-area">
             <input type="text" id="userInput" placeholder="Type a message..." />
             <button onclick="sendMessage()">Send</button>
@@ -66,7 +156,7 @@ if __name__ == '__main__':
             if (!userInput.trim()) return;
 
             let chatMessages = document.getElementById("chatMessages");
-            chatMessages.innerHTML += `<div><strong>You:</strong> ${userInput}</div>`;
+            chatMessages.innerHTML += `<div class="message user-message"><strong>You:</strong> ${userInput}</div>`;
 
             fetch("/chat", {
                 method: "POST",
@@ -75,7 +165,7 @@ if __name__ == '__main__':
             })
             .then(response => response.json())
             .then(data => {
-                chatMessages.innerHTML += `<div><strong>Bot:</strong> ${data.response}</div>`;
+                chatMessages.innerHTML += `<div class="message bot-message"><strong>Bot:</strong> ${data.response}</div>`;
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             });
 
@@ -85,6 +175,4 @@ if __name__ == '__main__':
 
 </body>
 </html>
-
-
 '''
