@@ -1,48 +1,34 @@
-import pdfplumber
-import re
+import yaml
+from uuid import uuid4
 
-def parse_qa_from_pdf(pdf_path):
-    """
-    Parse questions and answers from a PDF with Q: and A: format markers
-    Returns a list of dictionaries with keys 'question' and 'answer'
-    """
-    qa_pairs = []
+def generate_rasa_files(qa_pairs, output_dir="data"):
+    # Generate responses.yml
+    responses = {"version": "3.1", "responses": {}}
     
-    with pdfplumber.open(pdf_path) as pdf:
-        full_text = ""
-        
-        # Extract text from all pages
-        for page in pdf.pages:
-            full_text += page.extract_text() + "\n"
-        
-        # Split text into QA blocks using lookbehind for Q: or start of string
-        qa_blocks = re.split(r'(?<=\n)Q:|Q:', full_text)
-        
-        for block in qa_blocks[1:]:  # Skip first element if empty
-            # Split into question and answer parts
-            parts = re.split(r'\nA:', block, maxsplit=1)
-            
-            if len(parts) == 2:
-                question = parts[0].strip()
-                answer = parts[1].strip()
-                
-                # Clean up any remaining newlines
-                question = ' '.join(question.split())
-                answer = ' '.join(answer.split())
-                
-                qa_pairs.append({
-                    'question': question,
-                    'answer': answer
-                })
+    for idx, pair in enumerate(qa_pairs):
+        faq_id = f"faq_{uuid4().hex[:6]}"  # Unique ID for each FAQ
+        responses["responses"][f"utter_faq/{faq_id}"] = [{"text": pair["answer"]}]
     
-    return qa_pairs
+    # Save responses.yml
+    with open(f"{output_dir}/responses.yml", "w") as f:
+        yaml.dump(responses, f, default_flow_style=False)
 
-# Usage example
-pdf_path = "your_file.pdf"
-qa_data = parse_qa_from_pdf(pdf_path)
+    # Generate faq.yml (retrieval intent config)
+    faq_config = {
+        "version": "3.1",
+        "nlu": [{
+            "intent": "ask_faq",
+            "examples": "\n".join([f"- {q['question']}" for q in qa_pairs])
+        }],
+        "retrieval_intents": ["faq"]
+    }
+    
+    with open(f"{output_dir}/faq.yml", "w") as f:
+        yaml.dump(faq_config, f, default_flow_style=False)
 
-# Print results
-for idx, pair in enumerate(qa_data, 1):
-    print(f"Pair {idx}:")
-    print(f"Q: {pair['question']}")
-    print(f"A: {pair['answer']}\n")
+# Usage
+qa_pairs = [
+    {"question": "What is the capital of France?", "answer": "The capital of France is Paris."},
+    {"question": "What is the population of Paris?", "answer": "The population of Paris is approximately 2.1 million."}
+]
+generate_rasa_files(qa_pairs)
