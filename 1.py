@@ -98,3 +98,119 @@ qa_pairs = [
 
 generate_rasa_files(qa_pairs)
 
+###
+# Import necessary libraries
+import json
+import numpy as np
+import torch
+from torch.utils.data import Dataset, DataLoader
+from transformers import BertTokenizer, BertModel, AdamW
+import faiss
+
+# Define a custom dataset
+class QADataset(Dataset):
+    def __init__(self, qa_pairs, tokenizer, max_length=128):
+        self.qa_pairs = qa_pairs
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.qa_pairs)
+
+    def __getitem__(self, idx):
+        question = self.qa_pairs[idx]['question']
+        answer = self.qa_pairs[idx]['answer']
+        question_enc = self.tokenizer(
+            question, padding='max_length', truncation=True, max_length=self.max_length, return_tensors='pt'
+        )
+        answer_enc = self.tokenizer(
+            answer, padding='max_length', truncation=True, max_length=self.max_length, return_tensors='pt'
+        )
+        return {
+            'question_input_ids': question_enc['input_ids'].squeeze(),
+            'question_attention_mask': question_enc['attention_mask'].squeeze(),
+            'answer_input_ids': answer_enc['input_ids'].squeeze(),
+            'answer_attention_mask': answer_enc['attention_mask'].squeeze()
+        }
+
+# Load your JSON data
+with open('qa_data.json', 'r') as f:
+    qa_data = json.load(f)
+
+# Initialize the tokenizer and model
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = BertModel.from_pretrained('path_to_your_model')
+
+# Create the dataset and dataloader
+dataset = QADataset(qa_data, tokenizer)
+dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+# Set up the optimizer
+optimizer = AdamW(model.parameters(), lr=2e-5)
+
+# Fine-tuning loop
+model.train()
+for epoch in range(3):  # Number of epochs
+    for batch in dataloader:
+        optimizer.zero_grad()
+        question_outputs = model(
+            input_ids=batch['question_input_ids'],
+            attention_mask=batch['question_attention_mask']
+        )
+        answer_outputs = model(
+            input_ids=batch['answer_input_ids'],
+            attention_mask=batch['answer_attention_mask']
+        )
+        # Calculate a simple cosine similarity loss
+        question_embeddings = question_outputs.last_hidden_state[:, 0, :]  # CLS token
+        answer_embeddings = answer_outputs.last_hidden_state[:, 0, :]  # CLS token
+        cosine_sim = torch.nn.functional.cosine_similarity(question_embeddings, answer_embeddings)
+        loss = 1 - cosine_sim.mean()
+        loss.backward()
+        optimizer.step()
+    print(f"Epoch {epoch + 1} completed with loss: {loss.item()}")
+
+# Save the fine-tuned model
+model.save_pretrained('fine_tuned_bert_model')
+tokenizer.save_pretrained('fine_tuned_bert_tokenizer')
+
+# Generate embeddings for FAISS index
+model.eval()
+question_embeddings = []
+answers = []
+with torch.no_grad():
+    for item in qa_data:
+        question = item['question']
+        answer = item['answer']
+        inputs = tokenizer(question, return_tensors='pt', truncation=True, max_length=128)
+        outputs = model(**inputs)
+        embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
+        question_embeddings.append(embedding)
+        answers.append(answer)
+
+# Convert to numpy array
+question_embeddings = np.array(question_embeddings).astype('float32')
+
+# Build the FAISS index
+dimension = question_embeddings.shape[1]
+index = faiss.IndexFlatL2(dimension)
+index.add(question_embeddings)
+
+# Save the index and answers
+faiss.write_index(index, 'faiss_index.index')
+with open('answers.json', 'w') as f:
+    json.dump(answers, f)
+
+# Retrieval function
+def retrieve_answer(query, k=5):
+    inputs = tokenizer(query, return_tensors='pt', truncation=True, max_length=128)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    query_embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy().astype('float32')
+    distances, indices = index.search(np.array([query_embedding]), k)
+    return [answers[i] for i in indices[0]]
+
+# Example usage
+query = "Your question here"
+retrieved_answers = retrieve_answer(query)
+print("Retrieved Answers:", retrieved_answers)
