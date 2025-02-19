@@ -214,3 +214,38 @@ def retrieve_answer(query, k=5):
 query = "Your question here"
 retrieved_answers = retrieve_answer(query)
 print("Retrieved Answers:", retrieved_answers)
+
+
+
+import cx_Oracle
+
+# Database Configuration
+DB_USERNAME = "your_username"
+DB_PASSWORD = "your_password"
+DB_DSN = "your_host:your_port/your_service_name"
+
+def get_connection():
+    """Establish and return an Oracle database connection."""
+    try:
+        connection = cx_Oracle.connect(DB_USERNAME, DB_PASSWORD, DB_DSN)
+        return connection
+    except cx_Oracle.DatabaseError as e:
+        print(f"Error connecting to Oracle Database: {e}")
+        return None
+
+def fetch_user_info(user_id):
+    """Fetch user info based on user_id."""
+    conn = get_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            query = "SELECT name, email FROM users WHERE id = :user_id"
+            cursor.execute(query, {"user_id": user_id})
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return result
+        except cx_Oracle.DatabaseError as e:
+            print(f"Database error: {e}")
+            return None
+    return None
