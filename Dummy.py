@@ -514,3 +514,130 @@ model.fit(
     epochs=10,
     validation_split=0.2
 )
+
+
+import numpy as np
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Embedding, LSTM, Dense
+import pandas as pd
+
+# Sample data (replace with your actual DataFrame)
+data = {
+    'problem': ['hello world', 'test case'],
+    'resolution': ['goodbye world', 'pass test']
+}
+df = pd.DataFrame(data)
+
+# Preprocess text (lowercase to avoid case sensitivity)
+df['problem'] = df['problem'].str.lower()
+df['resolution'] = df['resolution'].str.lower()
+
+# Define special tokens and initialize tokenizer
+special_tokens = ['<start>', '<end>', '<pad>']
+all_text = df['problem'].tolist() + df['resolution'].tolist()
+
+# Ensure special tokens are in the tokenizer's vocabulary
+tokenizer = Tokenizer(oov_token='<UNK>')
+tokenizer.fit_on_texts(special_tokens)  # Fit on special tokens first
+tokenizer.fit_on_texts(all_text)        # Then fit on actual data
+vocab_size = len(tokenizer.word_index) + 1  # +1 for padding token (index 0)
+
+# Add special tokens to sequences
+df['resolution_input'] = df['resolution'].apply(lambda x: '<start> ' + x)
+df['resolution_target'] = df['resolution'].apply(lambda x: x + ' <end>')
+
+# Convert text to sequences and pad them
+max_seq_len = 10
+problem_sequences = pad_sequences(
+    tokenizer.texts_to_sequences(df['problem']),
+    maxlen=max_seq_len,
+    padding='post'
+)
+resolution_input_sequences = pad_sequences(
+    tokenizer.texts_to_sequences(df['resolution_input']),
+    maxlen=max_seq_len,
+    padding='post'
+)
+resolution_target_sequences = pad_sequences(
+    tokenizer.texts_to_sequences(df['resolution_target']),
+    maxlen=max_seq_len,
+    padding='post'
+)
+
+# Model parameters
+embedding_dim = 256
+lstm_units = 512
+
+# Encoder
+encoder_inputs = Input(shape=(max_seq_len,))
+encoder_embedding = Embedding(input_dim=vocab_size, output_dim=embedding_dim)(encoder_inputs)
+encoder_lstm, state_h, state_c = LSTM(lstm_units, return_state=True)(encoder_embedding)
+encoder_states = [state_h, state_c]
+
+# Decoder
+decoder_inputs = Input(shape=(max_seq_len - 1,))
+decoder_embedding = Embedding(input_dim=vocab_size, output_dim=embedding_dim)(decoder_inputs)
+decoder_lstm = LSTM(lstm_units, return_sequences=True)(decoder_embedding, initial_state=encoder_states)
+decoder_dense = Dense(vocab_size, activation='softmax')(decoder_lstm)
+
+# Define and compile the model
+model = Model([encoder_inputs, decoder_inputs], decoder_dense)
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+
+# Prepare training data
+decoder_input_data = resolution_input_sequences[:, :-1]  # Exclude last token
+decoder_target_data = np.expand_dims(resolution_target_sequences[:, 1:], -1)  # Shifted target
+
+# Train the model
+model.fit(
+    [problem_sequences, decoder_input_data],
+    decoder_target_data,
+    batch_size=32,
+    epochs=10,
+    validation_split=0.2,
+    verbose=1
+)
+
+# Inference function to generate resolutions
+def generate_resolution(problem):
+    # Convert problem to sequence
+    problem_seq = pad_sequences(
+        tokenizer.texts_to_sequences([problem.lower()]),
+        maxlen=max_seq_len,
+        padding='post'
+    )
+    
+    # Start with <start> token
+    resolution = [tokenizer.word_index['<start>']]
+    
+    # Generate sequence
+    for _ in range(max_seq_len):
+        decoder_input_seq = pad_sequences(
+            [resolution],
+            maxlen=max_seq_len - 1,
+            padding='post'
+        )
+        prediction = model.predict([problem_seq, decoder_input_seq], verbose=0)
+        predicted_id = np.argmax(prediction[0, len(resolution) - 1, :])
+        resolution.append(predicted_id)
+        
+        # Stop if <end> token is predicted
+        if predicted_id == tokenizer.word_index['<end>']:
+            break
+    
+    # Convert token IDs to words
+    resolution_words = []
+    for idx in resolution[1:]:  # Skip <start>
+        if idx == tokenizer.word_index['<end>']:
+            break
+        resolution_words.append(tokenizer.index_word.get(idx, '<UNK>'))
+    
+    return ' '.join(resolution_words)
+
+# Test the model
+new_problem = "hello world"
+resolution = generate_resolution(new_problem)
+print(f"Problem: {new_problem}")
+print(f"Resolution: {resolution}")
