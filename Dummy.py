@@ -443,3 +443,74 @@ class ActionCollectFeedback(Action):
         data_bandit.update(last_decision, reward)
         dispatcher.utter_message(response="utter_thanks_feedback")
         return []
+
+
+
+
+import numpy as np
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Embedding, LSTM, Dense
+import pandas as pd
+
+# Example data
+data = {'problem': ['hello world', 'test case'], 'resolution': ['goodbye world', 'pass test']}
+df = pd.DataFrame(data)
+
+# Lowercase to avoid case sensitivity issues
+df['problem'] = df['problem'].str.lower()
+df['resolution'] = df['resolution'].str.lower()
+
+# Tokenizer
+all_text = df['problem'].tolist() + df['resolution'].tolist()
+special_tokens = ['<start>', '<end>']
+tokenizer = Tokenizer(oov_token='<UNK>')
+tokenizer.fit_on_texts(all_text + special_tokens)
+vocab_size = len(tokenizer.word_index) + 1
+print(f"Vocabulary size: {vocab_size}")
+
+# Prepare sequences
+df['resolution_full'] = df['resolution'].apply(lambda x: '<start> ' + x + ' <end>')
+problem_sequences = pad_sequences(tokenizer.texts_to_sequences(df['problem']), maxlen=10, padding='post')
+resolution_sequences = pad_sequences(tokenizer.texts_to_sequences(df['resolution_full']), maxlen=10, padding='post')
+
+# Check indices
+print("Max index in problem_sequences:", np.max(problem_sequences))
+print("Max index in resolution_sequences:", np.max(resolution_sequences))
+assert np.max(problem_sequences) < vocab_size, "Out-of-range indices in problem_sequences"
+assert np.max(resolution_sequences) < vocab_size, "Out-of-range indices in resolution_sequences"
+
+# Model parameters
+embedding_dim = 256
+lstm_units = 512
+max_seq_len = 10
+
+# Encoder
+encoder_inputs = Input(shape=(max_seq_len,))
+encoder_embedding = Embedding(input_dim=vocab_size, output_dim=embedding_dim)(encoder_inputs)
+encoder_lstm, state_h, state_c = LSTM(lstm_units, return_state=True)(encoder_embedding)
+encoder_states = [state_h, state_c]
+
+# Decoder
+decoder_inputs = Input(shape=(max_seq_len-1,))
+decoder_embedding = Embedding(input_dim=vocab_size, output_dim=embedding_dim)(decoder_inputs)
+decoder_lstm = LSTM(lstm_units, return_sequences=True)(decoder_embedding, initial_state=encoder_states)
+decoder_dense = Dense(vocab_size, activation='softmax')(decoder_lstm)
+
+# Model
+model = Model([encoder_inputs, decoder_inputs], decoder_dense)
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+
+# Training data
+decoder_input_data = resolution_sequences[:, :-1]
+decoder_target_data = resolution_sequences[:, 1:]
+
+# Train
+model.fit(
+    [problem_sequences, decoder_input_data],
+    decoder_target_data,
+    batch_size=32,
+    epochs=10,
+    validation_split=0.2
+)
