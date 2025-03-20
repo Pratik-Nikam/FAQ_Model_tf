@@ -74,7 +74,355 @@ Try class weighting in the loss function to give more importance to minority cla
 
 3. Data Augmentation:
 
-If using images or text, apply augmentation techniques to improve generalization.
+If using images or text, apply augmentation techniques to improve chatbot/
+│── app.py                # Main Flask App
+│── config.py             # Configuration Settings
+│── sockets.py            # ✅ Async WebSocket Handlers
+│── tasks/                # ✅ Modular Task Handlers
+│   ├── create_ticket.py  
+│   ├── get_case.py       
+│── templates/            # ✅ Adaptive Card Templates
+│   ├── welcome.json      
+│   ├── create_ticket.json 
+│   ├── case_details.json  
+│── task_registry.py       # ✅ Auto-Registers Tasks
+│── conversation.py        # ✅ Async Conversation State Handling
+│── api.py                 # ✅ Async API Endpoints
+│── database.py            # ✅ Async Database Support
+│── models.py             
+│── intent_classifier.py   # ✅ Async Intent Classification
+│── intents.json          
+│── requirements.txt      
+└── migrations/           
+
+
+import json
+import re
+import asyncio
+
+class IntentClassifier:
+    def __init__(self, rules_file="intents.json"):
+        """ Load regex-based intent rules """
+        with open(rules_file, 'r') as f:
+            self.rules = json.load(f)
+        self.compiled_patterns = {
+            rule['intent']: [re.compile(pattern, re.IGNORECASE) for pattern in rule['patterns']]
+            for rule in self.rules
+        }
+
+    async def classify(self, text):
+        """ Match user input to intent (async for better performance) """
+        await asyncio.sleep(0)
+        for intent, patterns in self.compiled_patterns.items():
+            for pattern in patterns:
+                if pattern.search(text):
+                    return intent
+        return "unknown"
+
+[
+    {
+        "intent": "create_ticket",
+        "patterns": ["create.*ticket", "new.*ticket", "report.*issue"]
+    },
+    {
+        "intent": "get_case_details",
+        "patterns": ["case.*details", "view.*case", "check.*status"]
+    }
+]
+
+
+
+from flask_socketio import emit
+import json
+import asyncio
+from task_registry import get_task
+from conversation import get_user_state, update_user_state
+from intent_classifier import IntentClassifier
+
+classifier = IntentClassifier()
+
+async def load_adaptive_card(template_file, data={}):
+    """ Load Adaptive Card JSON and replace placeholders dynamically """
+    await asyncio.sleep(0)  # Allows async execution
+    with open(f"templates/{template_file}", 'r') as f:
+        template = json.load(f)
+    return template
+
+def setup_sockets(socketio):
+
+    @socketio.on('connect')
+    async def handle_connect():
+        """ Send welcome message using Adaptive Card """
+        adaptive_card = await load_adaptive_card("welcome.json")
+        emit('bot_message', {"adaptive_card": adaptive_card})
+
+    @socketio.on('user_message')
+    async def handle_user_message(data):
+        """ Process user input dynamically """
+        user_id = data.get('user_id')
+        user_message = data.get('message')
+
+        user_state = await get_user_state(user_id)
+        if user_state.get("task"):
+            task_handler = get_task(user_state["task"])
+            if task_handler:
+                await task_handler.handle_response(user_id, user_message)
+                return
+        
+        # Classify intent
+        intent = await classifier.classify(user_message)
+        task_handler = get_task(intent)
+
+        if task_handler:
+            await task_handler.start(user_id)
+        else:
+            emit('bot_message', {"message": "I didn't understand that. Please choose an option."})
+
+
+from flask_socketio import emit
+from database import save_task
+from conversation import update_user_state, get_user_state
+import json
+import asyncio
+
+class TaskHandler:
+    """ Handles Ticket Creation """
+
+    async def start(self, user_id, params=None):
+        """ Sends ticket creation form using Adaptive Card """
+        await asyncio.sleep(0)
+        with open("templates/create_ticket.json", 'r') as f:
+            adaptive_card = json.load(f)
+        emit('bot_message', {"adaptive_card": adaptive_card}, room=user_id)
+        await update_user_state(user_id, {"task": "create_ticket", "step": "awaiting_title"})
+
+    async def handle_response(self, user_id, message):
+        """ Handles ticket creation step by step """
+        user_state = await get_user_state(user_id)
+
+        if user_state["step"] == "awaiting_title":
+            await update_user_state(user_id, {"task": "create_ticket", "step": "awaiting_description", "title": message})
+            emit('bot_message', {"message": "Please describe your issue."}, room=user_id)
+
+        elif user_state["step"] == "awaiting_description":
+            title = user_state["title"]
+            await save_task(user_id, "create_ticket", {"title": title, "description": message})
+            emit('bot_message', {"message": f"✅ Ticket '{title}' created successfully!"}, room=user_id)
+            await update_user_state(user_id, None)
+
+
+
+from flask import request, jsonify
+from task_registry import get_task
+from intent_classifier import IntentClassifier
+from database import get_tasks_by_user
+import asyncio
+
+classifier = IntentClassifier()
+
+async def setup_api(app):
+
+    @app.route('/tasks/execute', methods=['POST'])
+    async def execute_task_api():
+        """ API to trigger a chatbot task """
+        data = request.json
+        user_id = data.get("user_id")
+        user_message = data.get("message")
+
+        intent = await classifier.classify(user_message)
+        task_handler = get_task(intent)
+
+        if not task_handler:
+            return jsonify({"error": "Invalid task"}), 400
+
+        response = await task_handler.start(user_id)
+        return jsonify(response)
+
+    @app.route('/tasks/<user_id>', methods=['GET'])
+    async def fetch_user_tasks(user_id):
+        """ API to get all tasks for a user """
+        tasks = await get_tasks_by_user(user_id)
+        return jsonify(tasks)
+
+
+
+from models import TaskRecord, db
+import asyncio
+
+async def save_task(user_id, task_type, task_data, status="Pending"):
+    """ Save task execution to database """
+    await asyncio.sleep(0)
+    task = TaskRecord(user_id=user_id, task_type=task_type, task_data=task_data, status=status)
+    db.session.add(task)
+    db.session.commit()
+
+async def get_tasks_by_user(user_id):
+    """ Fetch all tasks for a given user """
+    await asyncio.sleep(0)
+    tasks = TaskRecord.query.filter_by(user_id=user_id).all()
+    return [{"task": t.task_type, "status": t.status, "data": t.task_data} for t in tasks]
+
+
+
+from flask import Flask
+from flask_socketio import SocketIO
+from flask_sqlalchemy import SQLAlchemy
+import asyncio
+from config import Config
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+db = SQLAlchemy(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Import and initialize modules
+from sockets import setup_sockets
+from api import setup_api
+
+setup_sockets(socketio)
+setup_api(app)
+
+if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    socketio.run(app, debug=True, host="0.0.0.0", port=5000)
+
+
+class Config:
+    SECRET_KEY = "your_secret_key"
+    SQLALCHEMY_DATABASE_URI = "sqlite:///chatbot.db"  # Change to PostgreSQL/MySQL in production
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+
+
+from app import db
+
+class UserSession(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(100), unique=True, nullable=False)
+    conversation_state = db.Column(db.JSON, nullable=True)
+
+class TaskRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(100), nullable=False)
+    task_type = db.Column(db.String(50), nullable=False)
+    task_data = db.Column(db.JSON, nullable=True)
+    status = db.Column(db.String(20), default="
+    
+flask db init
+flask db migrate -m "Initial migration"
+flask db upgrade
+
+
+{
+    "type": "AdaptiveCard",
+    "body": [
+        {
+            "type": "TextBlock",
+            "text": "Welcome! How can I assist you?",
+            "weight": "Bolder",
+            "size": "Medium"
+        }
+    ],
+    "actions": [
+        {
+            "type": "Action.Submit",
+            "title": "Create Ticket",
+            "data": { "task": "create_ticket" }
+        },
+        {
+            "type": "Action.Submit",
+            "title": "Get Case Details",
+            "data": { "task": "get_case_details" }
+        }
+    ],
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.2"
+}
+
+
+{
+    "type": "AdaptiveCard",
+    "body": [
+        {
+            "type": "TextBlock",
+            "text": "Create a Ticket",
+            "weight": "Bolder",
+            "size": "Medium"
+        },
+        {
+            "type": "Input.Text",
+            "id": "title",
+            "placeholder": "Enter ticket title"
+        },
+        {
+            "type": "Input.Text",
+            "id": "description",
+            "placeholder": "Describe your issue",
+            "isMultiline": true
+        }
+    ],
+    "actions": [
+        {
+            "type": "Action.Submit",
+            "title": "Submit",
+            "data": { "task": "submit_ticket" }
+        }
+    ],
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.2"
+}
+
+
+
+import importlib
+import os
+
+TASKS = {}
+
+def register_task(task_name, task_class):
+    """ Registers a new task dynamically """
+    TASKS[task_name] = task_class()
+
+def get_task(task_name):
+    """ Retrieve a registered task """
+    return TASKS.get(task_name)
+
+def load_tasks():
+    """ Auto-load tasks from tasks/ folder """
+    task_folder = os.path.dirname(__file__) + "/tasks"
+    for file in os.listdir(task_folder):
+        if file.endswith(".py") and file != "__init__.py":
+            module_name = f"tasks.{file[:-3]}"
+            module = importlib.import_module(module_name)
+            if hasattr(module, "TaskHandler"):
+                register_task(file[:-3], module.TaskHandler)
+
+load_tasks()
+
+from models import UserSession, db
+import asyncio
+
+async def get_user_state(user_id):
+    """ Retrieve user's conversation state """
+    await asyncio.sleep(0)
+    session = UserSession.query.filter_by(user_id=user_id).first()
+    return session.conversation_state if session else {}
+
+async def update_user_state(user_id, state):
+    """ Update or clear user session state """
+    await asyncio.sleep(0)
+    session = UserSession.query.filter_by(user_id=user_id).first()
+    if session:
+        session.conversation_state = state
+    else:
+        session = UserSession(user_id=user_id, conversation_state=state)
+        db.session.add(session)
+    db.session.commit()
+
+
+
 
 
 
