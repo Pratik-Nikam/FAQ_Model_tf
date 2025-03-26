@@ -1,25 +1,118 @@
-from flask import Flask, request
+chatbot/
+├── app.py                      # Main app entrypoint
+├── sockets.py                 # WebSocket event handling
+├── intent_classifier.py       # Intent classification logic
+├── task_router.py             # Dispatch to the correct task handler
+├── task_manager/
+│   ├── __init__.py
+│   ├── base_task.py           # Base class for task handlers
+│   ├── create_ticket.py       # Task: Create Ticket
+│   ├── get_case_details.py    # Task: Get Case Details
+│   └── ...                    # Add more tasks here
+├── utils/
+│   └── adaptive_cards.py      # Helpers to render cards
+└── static/                    # JS/CSS assets (if needed for front-end)
+
+/intent{
+    "name": "create_ticket",
+    "params": {
+        "gci_id": "ABC123"
+    }
+}
+
+
+import json
+import re
+
+def parse_intent_message(message):
+    match = re.match(r"/intent(\{.*\})", message)
+    if not match:
+        return None, None
+    try:
+        data = json.loads(match.group(1))
+        return data.get("name"), data.get("params", {})
+    except json.JSONDecodeError:
+        return None, None
+
+from abc import ABC, abstractmethod
+
+class BaseTask(ABC):
+    def __init__(self, user_session):
+        self.user_session = user_session
+
+    @abstractmethod
+    def handle(self, params):
+        pass
+
+from task_manager.base_task import BaseTask
+
+class CreateTicketTask(BaseTask):
+    def handle(self, params):
+        gci_id = params.get("gci_id")
+        # Simulate case lookup or ticket creation logic
+        cases = ["Case 1", "Case 2", "Case 3"]
+        return {
+            "type": "card",
+            "title": f"Cases for GCI {gci_id}",
+            "options": cases
+        }
+
+
+from task_manager.create_ticket import CreateTicketTask
+from task_manager.get_case_details import GetCaseDetailsTask
+# Import more as needed
+
+def get_task_handler(intent_name, user_session):
+    task_map = {
+        "create_ticket": CreateTicketTask,
+        "get_case_details": GetCaseDetailsTask,
+        # Add more intents here
+    }
+    handler_cls = task_map.get(intent_name)
+    return handler_cls(user_session) if handler_cls else None
+
+
 from flask_socketio import SocketIO, emit
-from flask_cors import CORS
+from intent_classifier import parse_intent_message
+from task_router import get_task_handler
 
-app = Flask(__name__)
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins='*')
+socketio = SocketIO()
 
-@socketio.on('connect')
-def handle_connect():
-    print(f'Client connected: {request.sid}')
-    emit('bot_uttered', {'text': 'Welcome!', 'meta': {}})
+@socketio.on('message')
+def handle_message(message):
+    intent, params = parse_intent_message(message)
+    if not intent:
+        emit('bot_response', {"text": "Invalid message format."})
+        return
+    
+    user_session = {}  # You can track session state if needed
+    handler = get_task_handler(intent, user_session)
+    
+    if handler:
+        response = handler.handle(params)
+        emit('bot_response', response)
+    else:
+        emit('bot_response', {"text": f"No handler for intent: {intent}"})
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    print(f'Client disconnected: {request.sid}')
 
-@socketio.on('user_uttered')
-def handle_user_uttered(data):
-    print(f'Received message from user: {data}')
-    response_text = f"Echo: {data.get('text')}"
-    emit('bot_uttered', {'text': response_text, 'meta': {}})
+def render_case_card(title, options):
+    return {
+        "type": "adaptive_card",
+        "title": title,
+        "choices": options
+    }
 
-if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000)
+
+    
+
+        
+
+    
+
+        
+
+
+        
+
+
+        
